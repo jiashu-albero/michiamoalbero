@@ -78,7 +78,7 @@ function draw() {
 
     push();
     translate(headTopX, headTopY);
-    branch(110, 1);
+    branch(200, 1);
     pop();
 
     // 树长完 → 允许再次检测生长点
