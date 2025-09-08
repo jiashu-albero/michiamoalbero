@@ -1,15 +1,15 @@
 let video;
-let headTop = null;
-let locked = false;
-
-let stem = null;
-let flowerRadius = 0;
-let blooming = false;
-let finished = false;
+let headTopX, headTopY;
+let theta;
+let maxDepth = 0;
+let growthSpeed = 3; 
+let a;
+let growthFactor = 0;
+let treeGrowing = false;
+let MAX_ALLOWED_DEPTH = 12;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  pixelDensity(1);
 
   let constraints = {
     video: { facingMode: "user" },
@@ -18,115 +18,97 @@ function setup() {
   video = createCapture(constraints);
   video.size(width, height);
   video.hide();
+
+  frameRate(30);
 }
 
 function draw() {
+  background(0);
+
   image(video, 0, 0, width, height);
 
-  if (!locked) {
-    detectHeadTop();
-  }
-
-  if (stem) {
-    drawStem();
-
-    if (!blooming && stem.y2 < height * 0.2) {
-      blooming = true; // 到顶后开始开花
-    }
-  }
-
-  if (blooming && !finished) {
-    drawFlower(stem.x2, stem.y2);
-
-    // 如果花基本覆盖满屏，结束这一轮
-    if (flowerRadius > max(width, height) * 0.6) {
-      finished = true;
-      resetFlower();
-    }
-  }
-}
-
-// ------------------- 人头检测 -------------------
-function detectHeadTop() {
   video.loadPixels();
-  let centerX = int(video.width / 2);
-  let headTopY = -1;
 
+  let detectedX = -1;
+  let detectedY = -1;
+
+  // 从上往下扫描每一行中心列像素
+  let centerX = int(video.width / 2);
   for (let y = 0; y < video.height; y++) {
-    let idx = (y * video.width + centerX) * 4;
-    let r = video.pixels[idx];
-    let g = video.pixels[idx + 1];
-    let b = video.pixels[idx + 2];
+    let index = (y * video.width + centerX) * 4;
+    let r = video.pixels[index + 0];
+    let g = video.pixels[index + 1];
+    let b = video.pixels[index + 2];
     let brightness = (r + g + b) / 3;
 
-    if (brightness < 80) {
-      headTopY = y;
-      break;
+    if (brightness < 80) { // 阈值判断
+      detectedX = centerX;
+      detectedY = y;
+      break; // 找到第一个暗点就停止
     }
   }
 
-  if (headTopY > 0) {
-    headTop = {
-      x: width / 2,
-      y: map(headTopY, 0, video.height, 0, height)
-    };
+  // 如果找到头顶并且树没有在生长
+  if (detectedY > 0 && !treeGrowing) {
+    headTopX = map(detectedX, 0, video.width, 0, width);
+    headTopY = map(detectedY, 0, video.height, 0, height);
 
     fill(255, 0, 0);
     noStroke();
-    ellipse(headTop.x, headTop.y, 6, 6);
+   // ellipse(headTopX, headTopY, 10, 10);
 
-    locked = true;
-    stem = { x1: headTop.x, y1: headTop.y, x2: headTop.x, y2: headTop.y, len: 200 };
+    // 启动树生长
+    treeGrowing = true;
+    maxDepth = 0;
+    growthFactor = 0;
+    a = random(0.2, 0.35) * 90;
+    theta = radians(a);
+  }
+
+  // 绘制树
+  if (treeGrowing) {
+    stroke(255);
+
+    if (frameCount % growthSpeed === 0 && maxDepth < MAX_ALLOWED_DEPTH) {
+      maxDepth++;
+      growthFactor = 0;
+    }
+
+    growthFactor = min(growthFactor + 0.02, 1);
+
+    push();
+    translate(headTopX, headTopY);
+    branch(110, 1);
+    pop();
+
+    // 树长完 → 允许再次检测生长点
+    if (maxDepth === MAX_ALLOWED_DEPTH && growthFactor === 1) {
+      treeGrowing = false;
+    }
   }
 }
 
-// ------------------- 绘制茎 -------------------
-function drawStem() {
-  stroke(34, 139, 34);
-  strokeWeight(8);
-  line(stem.x1, stem.y1, stem.x2, stem.y2);
+function branch(h, depth) {
+  if (depth > maxDepth) return;
 
-  // 慢慢往上长
-  if (!blooming) {
-    stem.y2 -= 2;
+  let len = h * (depth === maxDepth ? growthFactor : 1);
+
+  let alpha = depth === maxDepth ? map(growthFactor, 0, 1, 50, 255) : 255;
+  stroke(40,180,40, alpha);
+  strokeWeight(1.5);
+  line(0, 0, 0, -len);
+  translate(0, -len);
+
+  h *= 0.66;
+  if (h > 2) {
+    push();
+    rotate(theta);
+    branch(h, depth + 1);
+    pop();
+
+    push();
+    rotate(-theta);
+    branch(h, depth + 1);
+    pop();
   }
 }
-
-// ------------------- 绘制花 -------------------
-function drawFlower(x, y) {
-  flowerRadius += 2; // 每帧扩大半径
-
-  noFill();
-  strokeWeight(2);
-
-  for (let angle = 0; angle < TWO_PI; angle += PI / 12) {
-    let r = flowerRadius * (1 + 0.2 * sin(frameCount * 0.05 + angle * 3));
-    let x2 = x + cos(angle) * r;
-    let y2 = y + sin(angle) * r;
-
-    stroke(255, 100 + 100 * sin(angle * 5), 150 + 50 * cos(angle * 3), 180);
-    line(x, y, x2, y2);
-  }
-
-  // 花心
-  noStroke();
-  fill(255, 200, 0, 200);
-  ellipse(x, y, 20, 20);
-}
-
-// ------------------- 重置，准备下一轮 -------------------
-function resetFlower() {
-  setTimeout(() => {
-    stem = null;
-    flowerRadius = 0;
-    blooming = false;
-    finished = false;
-    locked = false; // 解锁，重新寻找头顶
-  }, 1000); // 给一点停顿时间
-}
-
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
-  video.size(windowWidth, windowHeight);
-}
-
